@@ -21,10 +21,11 @@ PORT = 8732
 
 
 class Sim:
-    def __init__(self, wl_interval=5000, **kw):
+    def __init__(self, wl_interval=5000, wl_delta=20, **kw):
         self.cfg = NandConfig(**kw)
         self.ctrl = Controller(self.cfg)
-        self.ftl = PageFTL(self.ctrl, wl_interval=wl_interval)
+        self.ftl = PageFTL(self.ctrl, wl_interval=wl_interval,
+                           wl_delta=wl_delta)
         self.workloads = {}
         self.history = []          # per-run-interval snapshots
         self._last = (0, 0, 0, 0)  # (host_w, nand_w, gc_reads+host_reads, erases)
@@ -85,6 +86,7 @@ class Sim:
             "ram": self.ftl.ram_report(),
             "ftl": self.ftl.alloc_state(),
             "wl_interval": self.ftl.wl_interval,
+            "wl_delta": self.ftl.wl_delta,
             "lba_heat": self.ftl.lba_heat(),
             "oplog": [list(e) for e in self.ctrl.oplog],
             "channels": {
@@ -136,8 +138,9 @@ class Handler(BaseHTTPRequestHandler):
             req = self._body()
             if self.path == "/api/init":
                 kw = {k: req[k] for k in CONFIG_KEYS if k in req}
-                if "wl_interval" in req:
-                    kw["wl_interval"] = int(req["wl_interval"])
+                for fk in ("wl_interval", "wl_delta"):
+                    if fk in req:
+                        kw[fk] = int(req[fk])
                 with LOCK:
                     SIM = Sim(**kw)
                     self._send(200, {"ok": True, "config": SIM.cfg.as_dict()})

@@ -48,29 +48,39 @@ def test_ftl(kind, ops):
 
 
 def test_static_wl(ops=200_000):
-    """With periodic cold-block GC the coldest usable block must get worn too."""
+    """EC-aware allocation alone must bound the EC gap, every mode must lift
+    the minimum erase count above zero, and integrity must always hold."""
     cfg = NandConfig()
     rsv = cfg.reserved_blocks_per_die
-
-    def ec_range(ctrl):
-        return (min(min(d.erase_count[rsv:]) for d in ctrl.dies),
-                max(max(d.erase_count[rsv:]) for d in ctrl.dies))
-
-    # one WL sweep must be able to cover every usable block within the run:
-    # interval 500 -> 400 triggers > 248 usable blocks
-    WL = 500
-    results = {}
-    for wl_interval in (0, WL):
+    for wl_i, wl_d, tag in ((0, 0, "EC-aware alloc only"),
+                            (500, 0, "interval trigger"),
+                            (5000, 20, "combined")):
         ctrl = Controller(cfg)
-        ftl = PageFTL(ctrl, wl_interval=wl_interval)
+        ftl = PageFTL(ctrl, wl_interval=wl_i, wl_delta=wl_d)
         run_ops(ftl, Workload(cfg.user_pages, kind="hotcold", seed=7), ops)
         v = ftl.verify()
-        assert v["ok"], f"integrity FAILED with wl_interval={wl_interval}: {v}"
-        results[wl_interval] = ec_range(ctrl)
-    (mn0, mx0), (mn1, mx1) = results[0], results[WL]
-    assert mn1 > 0, "static WL did not touch cold blocks"
-    assert (mx1 - mn1) < (mx0 - mn0), "static WL did not narrow the EC gap"
-    print(f"static WL: off Δ={mx0-mn0} (min {mn0}) -> on Δ={mx1-mn1} (min {mn1})  OK")
+        assert v["ok"], f"integrity FAILED ({tag}): {v}"
+        lo = min(min(d.erase_count[rsv:]) for d in ctrl.dies)
+        delta = ftl.ec_delta()
+        assert lo > 0, f"{tag}: cold blocks untouched"
+        assert delta <= 25, f"{tag}: EC gap too wide: {delta}"
+        print(f"{tag:20s} min EC={lo:3d}  Δ={delta:3d}  wl_runs={ftl.wl_runs}  OK")
+
+
+def test_wl_delta_clamp(ops=200_000, threshold=15):
+    """The closed-loop trigger must hold the EC gap near the threshold."""
+    cfg = NandConfig()
+    ctrl = Controller(cfg)
+    ftl = PageFTL(ctrl, wl_interval=0, wl_delta=threshold)
+    run_ops(ftl, Workload(cfg.user_pages, kind="hotcold", seed=7), ops)
+    v = ftl.verify()
+    assert v["ok"], f"integrity FAILED: {v}"
+    delta = ftl.ec_delta()
+    # the check runs every 128 writes and moves one block per trigger,
+    # so allow a small convergence overshoot
+    assert delta <= threshold + 5, f"EC gap not clamped: Δ={delta}"
+    print(f"WL Δ-clamp: threshold={threshold}, final Δ={delta}, "
+          f"wl_runs={ftl.wl_runs}  OK")
 
 
 if __name__ == "__main__":
@@ -78,4 +88,5 @@ if __name__ == "__main__":
     for kind in ("seq", "rand", "hotcold"):
         test_ftl(kind, 200_000)
     test_static_wl()
+    test_wl_delta_clamp()
     print("ALL PASSED")

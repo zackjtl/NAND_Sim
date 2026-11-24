@@ -280,7 +280,9 @@ function renderTiles(s){
     ["GC 搬移", fmt(m.gc_writes), "pages"],
     ["GC 次數", fmt(m.gc_runs), ""],
     ["靜態 WL", fmt(m.wl_runs),
-     s.wl_interval > 0 ? `每 ${fmt(s.wl_interval)} 寫入觸發` : "停用"],
+     [s.wl_interval > 0 ? `每 ${fmt(s.wl_interval)} 寫入` : null,
+      s.wl_delta > 0 ? `Δ>${s.wl_delta}` : null]
+       .filter(Boolean).join("、") || "停用"],
     ["LBA 使用率", util.toFixed(1) + "%", fmt(m.mapped_lbas) + " mapped"],
   ];
   $("tiles").innerHTML = tiles.map(([k,v,d]) =>
@@ -655,8 +657,9 @@ $("reset").onclick = async () => {
   const ram = ask("Controller RAM (KB)?", cur.ram_kb); if (ram === null) return;
   const rsv = ask("Reserved system blocks / die?", cur.reserved_blocks_per_die); if (rsv === null) return;
   const wl = ask("Static WL interval（每 N 次 host 寫入觸發冷 block GC，0=停用）?", s0.wl_interval); if (wl === null) return;
+  const wld = ask("Static WL Δ 門檻（max-min EC 超過即觸發，0=停用）?", s0.wl_delta); if (wld === null) return;
   stopAuto();
-  const r = await api("/api/init", {channels, blocks_per_die:bpd, pages_per_block:ppb, op_ratio:op, ram_kb:ram, reserved_blocks_per_die:rsv, wl_interval:wl});
+  const r = await api("/api/init", {channels, blocks_per_die:bpd, pages_per_block:ppb, op_ratio:op, ram_kb:ram, reserved_blocks_per_die:rsv, wl_interval:wl, wl_delta:wld});
   if (!r.ok) say(r.error, false); else say("已重設", true);
   await refresh();
 };

@@ -11,7 +11,6 @@ LBA through the FTL and compares both the reverse-mapped LBA and the tag.
 """
 
 from array import array
-from collections import deque
 
 from .nand import VALID, SimViolation
 from .controller import Controller
@@ -21,7 +20,7 @@ class PageFTL:
     GC_LOW_WATER = 2          # run GC when a die's free-block pool drops to this
     MAP_ENTRY_BYTES = 4
 
-    def __init__(self, ctrl: Controller, wl_interval=0):
+    def __init__(self, ctrl: Controller, wl_interval=0, wl_delta=0):
         self.ctrl = ctrl
         cfg = ctrl.cfg
         self.cfg = cfg
@@ -29,13 +28,13 @@ class PageFTL:
         self.map = array("i", [-1]) * self.user_pages
 
         nd = cfg.ndies
-        # free-block pools, one per die. FIFO queues: every freed block goes
-        # to the back and allocation takes from the front, so all free blocks
-        # circulate (a LIFO stack would leave the bottom entries unused and
-        # pinned at erase count 0 forever). The reserved system area
+        # free-block pools, one per die. Allocation is EC-aware (see
+        # _take_free): host writes take the youngest free block, relocated
+        # (cold) data takes the oldest, so worn blocks retire under cold data
+        # and young blocks absorb the hot churn. The reserved system area
         # [0, reserved_blocks_per_die) is never handed to the FTL.
         rsv = cfg.reserved_blocks_per_die
-        self.free = [deque(range(rsv, cfg.blocks_per_die)) for _ in range(nd)]
+        self.free = [list(range(rsv, cfg.blocks_per_die)) for _ in range(nd)]
         self.host_open = [None] * nd    # active block receiving host writes
         self.gc_open = [None] * nd      # active block receiving GC relocations
         self.rr = 0                     # round-robin die cursor for striping
@@ -48,11 +47,16 @@ class PageFTL:
         self.wseq = 0
         self.lba_writes = array("i", [0]) * self.user_pages   # logical heat
 
-        # static wear leveling: every wl_interval host writes, force-collect
-        # the coldest fully-programmed block (lowest erase count) so cold
-        # data rotates and the block rejoins the pool. 0 = disabled.
+        # static wear leveling, two triggers (either may be disabled with 0):
+        #   wl_interval - open loop: every N host writes, collect the coldest
+        #                 fully-programmed block (background rotation rate)
+        #   wl_delta    - closed loop: whenever max-min erase count (reserved
+        #                 area excluded) exceeds this, collect the coldest
+        #                 block until the gap closes - clamps the EC band
         self.wl_interval = int(wl_interval)
         self._wl_countdown = self.wl_interval
+        self.wl_delta = int(wl_delta)
+        self._wl_check = 0            # re-evaluate the gap every 128 writes
         self.wl_runs = 0
 
         # host-side shadow table for verification (not controller RAM)
@@ -83,6 +87,12 @@ class PageFTL:
             if self._wl_countdown <= 0:
                 self._wl_countdown = self.wl_interval
                 self._static_wl()
+        if self.wl_delta > 0:
+            self._wl_check -= 1
+            if self._wl_check <= 0:
+                self._wl_check = 128
+                if self.ec_delta() > self.wl_delta:
+                    self._static_wl()
 
     def read(self, lba):
         ppa = self.map[lba]
@@ -112,10 +122,20 @@ class PageFTL:
     def _take_free(self, die, for_gc):
         if not for_gc:
             self._gc_if_needed(die)
-        if not self.free[die]:
+        pool = self.free[die]
+        if not pool:
             raise SimViolation(f"die {die}: free-block pool exhausted "
                                f"(over-provisioning too small?)")
-        return self.free[die].popleft()
+        # EC-aware allocation: hot host writes wear the youngest free block;
+        # GC/WL relocations (cold-leaning data) park on the oldest, giving
+        # worn blocks a rest. This is the second half of static WL - without
+        # it, freed cold data lands back on young blocks and the EC gap keeps
+        # widening.
+        ec = self.ctrl.dies[die].erase_count
+        pick = (max(pool, key=lambda b: ec[b]) if for_gc
+                else min(pool, key=lambda b: ec[b]))
+        pool.remove(pick)
+        return pick
 
     def _gc_if_needed(self, die):
         while len(self.free[die]) <= self.GC_LOW_WATER:
@@ -159,6 +179,13 @@ class PageFTL:
         self.erases += 1
         self.gc_runs += 1
         self.free[die].append(victim)
+
+    def ec_delta(self):
+        """max - min erase count over usable (non-reserved) blocks."""
+        rsv = self.cfg.reserved_blocks_per_die
+        lo = min(min(d.erase_count[rsv:]) for d in self.ctrl.dies)
+        hi = max(max(d.erase_count[rsv:]) for d in self.ctrl.dies)
+        return hi - lo
 
     def _static_wl(self):
         """Periodic cold-block GC: force-collect the fully-programmed block
