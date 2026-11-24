@@ -94,11 +94,15 @@
   .bus .fl { display:flex; align-items:center; gap:7px; color:var(--ink2); }
   .bus .fl b { color:var(--ink); font-variant-numeric:tabular-nums; }
   .bus .ar { font-size:15px; width:16px; text-align:center; }
-  .ticker { flex:1; min-width:280px; max-width:460px; }
+  .bus .flows { flex:none; width:260px; }
+  .bus .fl b { display:inline-block; min-width:52px; }
+  .ticker { flex:1; min-width:300px; max-width:470px; }
   .ticker .th { font-size:11.5px; color:var(--muted); margin-bottom:4px; }
-  .chips { display:flex; flex-wrap:wrap; gap:4px 8px; font-size:11px; color:var(--ink2);
+  .chips { display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+           gap:3px 10px; font-size:11px; color:var(--ink2);
            font-variant-numeric:tabular-nums; }
-  .chip { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .chip { display:flex; align-items:center; gap:4px; white-space:nowrap;
+          overflow:hidden; height:16px; }
   .dot { width:8px; height:8px; border-radius:50%; flex:none; }
 
   /* ---- block map ---- */
@@ -208,13 +212,22 @@
     </div>
     <div class="grid2">
       <div class="panel">
+        <div class="ph"><span class="t">Erase Count 最大 / 最小趨勢（wear leveling 指標）</span>
+          <span class="lg">
+            <span><span class="sw" style="background:var(--s1)"></span>最大</span>
+            <span><span class="sw" style="background:var(--s2)"></span>最小</span>
+            <span class="sub" id="ecgap"></span>
+          </span></div>
+        <div id="ectrend"></div>
+      </div>
+      <div class="panel">
         <div class="ph"><span class="t">Block 抹除次數分布（磨損均勻度）</span></div>
         <div id="echart"></div>
       </div>
-      <div class="panel">
-        <div class="ph"><span class="t">Channel 負載</span></div>
-        <table class="ch" id="chtable"></table>
-      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><span class="t">Channel 負載</span></div>
+      <table class="ch" id="chtable"></table>
     </div>
   </div>
 </section>
@@ -392,12 +405,16 @@ function renderBus(s){
        read（GC 回讀）<b>${fmt(f.d_read)}</b></div>
      <div class="fl"><span class="ar" style="color:var(--c-er)">↓</span>
        erase <b>${fmt(f.d_erase)}</b></div>`;
-  const chips = [...s.oplog].reverse().map(([op, origin, die, blk, pg]) => {
+  const SLOTS = 16;                       // fixed row count so the band never resizes
+  const entries = [...s.oplog].reverse().slice(0, SLOTS);
+  while (entries.length < SLOTS) entries.push(null);
+  $("chips").innerHTML = entries.map(e => {
+    if (!e) return `<span class="chip"></span>`;
+    const [op, origin, die, blk, pg] = e;
     const [color, name] = OPSTYLE[op + ":" + origin] || ["var(--muted)", op];
     const loc = op === "erase" ? `D${die}·B${blk}` : `D${die}·B${blk}·P${pg}`;
     return `<span class="chip"><span class="dot" style="background:${color}"></span>${name} ${loc}</span>`;
   }).join("");
-  $("chips").innerHTML = chips || `<span class="sub">尚無命令</span>`;
 }
 
 /* ============== NAND module ============== */
@@ -489,6 +506,62 @@ function renderEc(s){
   box.querySelector("svg").onmouseleave = hideTip;
 }
 
+function renderEcTrend(s){
+  const box = $("ectrend");
+  const H = s.history.filter(h => h.ec_max !== undefined);
+  if (H.length < 2){
+    box.innerHTML = `<div class="sub">執行 workload 後顯示曲線</div>`;
+    $("ecgap").textContent = "";
+    return;
+  }
+  const last = H[H.length - 1];
+  $("ecgap").textContent = `目前 Δ = ${fmt(last.ec_max - last.ec_min)}`;
+  const W = box.clientWidth || 420, Ht = 180, L = 42, R = 10, T = 10, B = 24;
+  const xs = H.map(h => h.host_writes);
+  const yMx = H.map(h => h.ec_max), yMn = H.map(h => h.ec_min);
+  const xmin = xs[0], xmax = xs[xs.length-1];
+  const ymax = Math.max(1, ...yMx) * 1.08;
+  const X = v => L + (v - xmin) / Math.max(1, xmax - xmin) * (W - L - R);
+  const Y = v => T + (1 - v / ymax) * (Ht - T - B);
+  const pts = ys => H.map((h,i) => `${X(xs[i]).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(" ");
+  // shaded band between max and min = the wear-leveling gap
+  const band = pts(yMx) + " " +
+    H.map((h,i) => `${X(xs[H.length-1-i]).toFixed(1)},${Y(yMn[H.length-1-i]).toFixed(1)}`).join(" ");
+  const yticks = [];
+  const stepY = Math.max(1, Math.ceil(ymax / 5));
+  for (let v = 0; v <= ymax; v += stepY) yticks.push(v);
+  const g = yticks.map(v =>
+    `<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/>
+     <text x="${L-6}" y="${Y(v)+3.5}" text-anchor="end" class="mono">${v}</text>`).join("");
+  box.innerHTML =
+  `<svg width="${W}" height="${Ht}" style="display:block">
+     ${g}
+     <line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--baseline)"/>
+     <polygon points="${band}" fill="var(--s1)" opacity="0.10"/>
+     <polyline points="${pts(yMx)}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>
+     <polyline points="${pts(yMn)}" fill="none" stroke="var(--s2)" stroke-width="2" stroke-linejoin="round"/>
+     <line id="xh2" x1="0" x2="0" y1="${T}" y2="${Ht-B}" stroke="var(--baseline)" stroke-dasharray="3 3" visibility="hidden"/>
+     <text x="${(L+W-R)/2}" y="${Ht-6}" text-anchor="middle">host writes（累積 pages）</text>
+   </svg>`;
+  const svg = box.firstElementChild, xh = svg.querySelector("#xh2");
+  svg.onmousemove = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = ev.clientX - r.left;
+    let best = 0, bd = 1e18;
+    for (let i = 0; i < H.length; i++){
+      const d = Math.abs(X(xs[i]) - px);
+      if (d < bd){ bd = d; best = i; }
+    }
+    xh.setAttribute("x1", X(xs[best])); xh.setAttribute("x2", X(xs[best]));
+    xh.setAttribute("visibility", "visible");
+    showTip(ev, `<b class="mono">${fmt(xs[best])}</b> <span class="tk">host writes</span><br>
+      <span class="sw" style="background:var(--s1)"></span>最大 EC <b class="mono">${fmt(yMx[best])}</b><br>
+      <span class="sw" style="background:var(--s2)"></span>最小 EC <b class="mono">${fmt(yMn[best])}</b><br>
+      <span class="tk">Δ 差距</span> <b class="mono">${fmt(yMx[best]-yMn[best])}</b>`);
+  };
+  svg.onmouseleave = () => { xh.setAttribute("visibility","hidden"); hideTip(); };
+}
+
 function renderCh(s){
   const ch = s.channels;
   let rows = `<tr><th>CH</th><th>programs</th><th>reads</th><th>erases</th></tr>`;
@@ -510,6 +583,7 @@ function renderAll(s){
   renderBus(s);
   const blockIndex = renderMap(s);
   renderAlloc(s, blockIndex);
+  renderEcTrend(s);
   renderEc(s);
   renderCh(s);
 }

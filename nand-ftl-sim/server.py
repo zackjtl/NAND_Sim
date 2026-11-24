@@ -37,6 +37,8 @@ class Sim:
         run_ops(self.ftl, wl, ops)
         m = self.ftl.metrics()
         reads = sum(self.ctrl.ch_reads)
+        ec_min = min(min(d.erase_count) for d in self.ctrl.dies)
+        ec_max = max(max(d.erase_count) for d in self.ctrl.dies)
         h0, n0, r0, e0 = self._last
         dh, dn = m["host_writes"] - h0, m["nand_writes"] - n0
         self.history.append({
@@ -47,6 +49,8 @@ class Sim:
             "d_gc": dn - dh,
             "d_read": reads - r0,
             "d_erase": m["erases"] - e0,
+            "ec_min": ec_min,
+            "ec_max": ec_max,
         })
         if len(self.history) > 400:
             self.history = self.history[-400:]
