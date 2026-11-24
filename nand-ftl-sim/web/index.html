@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAND/FTL Simulator</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:#f9f9f7; --surface:#fcfcfb;
+    --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,0.10);
+    --s1:#2a78d6; --s2:#eb6834;
+    --good:#006300; --bad:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page:#0d0d0d; --surface:#1a1a19;
+      --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,0.10);
+      --s1:#3987e5; --s2:#d95926;
+      --good:#0ca30c; --bad:#d03b3b;
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--page); color:var(--ink);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:16px;
+  }
+  h1 { font-size:17px; margin:0; }
+  .sub { color:var(--ink2); font-size:12px; margin-top:2px; }
+  .card {
+    background:var(--surface); border:1px solid var(--ring);
+    border-radius:10px; padding:14px;
+  }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  header.row { justify-content:space-between; margin-bottom:12px; }
+  main { display:grid; grid-template-columns: minmax(380px,1.2fr) minmax(340px,1fr); gap:12px; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .col { display:flex; flex-direction:column; gap:12px; }
+
+  /* controls */
+  label.ctl { display:flex; align-items:center; gap:6px; color:var(--ink2); font-size:13px; }
+  select,input[type=number] {
+    background:var(--surface); color:var(--ink); border:1px solid var(--baseline);
+    border-radius:6px; padding:4px 8px; font:inherit; width:90px;
+  }
+  select { width:auto; }
+  button {
+    background:var(--surface); color:var(--ink); border:1px solid var(--baseline);
+    border-radius:7px; padding:5px 14px; font:inherit; cursor:pointer;
+  }
+  button:hover { border-color:var(--ink2); }
+  button.primary { background:var(--s1); border-color:var(--s1); color:#fff; }
+  button[disabled] { opacity:.5; cursor:default; }
+
+  /* stat tiles */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin:12px 0; }
+  .tile { background:var(--surface); border:1px solid var(--ring); border-radius:10px; padding:10px 12px; }
+  .tile .k { font-size:11.5px; color:var(--ink2); }
+  .tile .v { font-size:22px; font-weight:650; margin-top:2px; }
+  .tile .d { font-size:11px; color:var(--muted); }
+
+  /* block map */
+  .diegrid { display:flex; flex-wrap:wrap; gap:14px; }
+  .die { }
+  .die .dh { font-size:11.5px; color:var(--ink2); margin-bottom:5px; }
+  .cells { display:grid; gap:2px; }
+  .cell {
+    width:15px; height:15px; border-radius:3px;
+    background:var(--page); border:1px dashed var(--baseline);
+  }
+  .cell.open { border:2px solid var(--s2); border-style:solid; }
+  .cell.full { border:1px solid var(--ring); border-style:solid; }
+  .legendrow { display:flex; gap:14px; align-items:center; margin-top:10px; flex-wrap:wrap;
+               font-size:11.5px; color:var(--ink2); }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
+
+  svg text { font:11px system-ui,-apple-system,"Segoe UI",sans-serif; fill:var(--muted); }
+  .charthead { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .charthead .t { font-size:13px; font-weight:600; }
+  .lg { font-size:11.5px; color:var(--ink2); display:flex; gap:12px; }
+
+  #tip {
+    position:fixed; display:none; pointer-events:none; z-index:10;
+    background:var(--surface); border:1px solid var(--ring); border-radius:7px;
+    box-shadow:0 2px 10px rgba(0,0,0,.18); padding:6px 9px; font-size:12px;
+    color:var(--ink); max-width:230px;
+  }
+  #tip .tk { color:var(--ink2); }
+  .rambar { height:8px; border-radius:4px; background:var(--grid); overflow:hidden; margin-top:6px; }
+  .rambar > div { height:100%; background:var(--s1); }
+  .okbadge { font-weight:600; }
+  .mono { font-variant-numeric: tabular-nums; }
+  table.ch { border-collapse:collapse; width:100%; margin-top:4px; font-size:12.5px; }
+  table.ch td, table.ch th { padding:3px 6px; text-align:right; color:var(--ink2); }
+  table.ch th { color:var(--muted); font-weight:500; border-bottom:1px solid var(--grid); }
+  table.ch td:first-child, table.ch th:first-child { text-align:left; }
+</style>
+</head>
+<body>
+<header class="row">
+  <div>
+    <h1>NAND / FTL Simulator</h1>
+    <div class="sub" id="cfgline">載入中…</div>
+  </div>
+  <div class="row" id="controls">
+    <label class="ctl">Workload
+      <select id="wl">
+        <option value="rand">隨機寫 (uniform)</option>
+        <option value="seq">循序寫</option>
+        <option value="hotcold">冷熱 80/20</option>
+      </select>
+    </label>
+    <label class="ctl">每步 ops <input type="number" id="ops" value="2000" min="1" step="1000"></label>
+    <button id="step">執行一步</button>
+    <button id="auto" class="primary">▶ 自動執行</button>
+    <button id="verify">驗證資料</button>
+    <button id="reset">重設…</button>
+    <span id="msg" style="font-size:12.5px"></span>
+  </div>
+</header>
+
+<div class="tiles" id="tiles"></div>
+
+<main>
+  <div class="col">
+    <div class="card">
+      <div class="charthead"><span class="t">Block 狀態圖（每格一個 block，依 channel 分組）</span></div>
+      <div class="diegrid" id="diegrid"></div>
+      <div class="legendrow" id="maplegend"></div>
+    </div>
+    <div class="card" id="rampanel"></div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <div class="charthead">
+        <span class="t">WAF 隨寫入量變化</span>
+        <span class="lg">
+          <span><span class="sw" style="background:var(--s1)"></span>累積 WAF</span>
+          <span><span class="sw" style="background:var(--s2)"></span>區間 WAF</span>
+        </span>
+      </div>
+      <div id="wafchart"></div>
+    </div>
+    <div class="card">
+      <div class="charthead"><span class="t">Block 抹除次數分布（磨損均勻度）</span></div>
+      <div id="echart"></div>
+    </div>
+    <div class="card">
+      <div class="charthead"><span class="t">Channel 負載</span></div>
+      <table class="ch" id="chtable"></table>
+    </div>
+  </div>
+</main>
+
+<div id="tip"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const tip = $("tip");
+const fmt = n => n.toLocaleString("en-US");
+const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches
+                     && document.documentElement.dataset.theme !== "light";
+
+// sequential blue ramp (reference palette, steps 100->700)
+const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7",
+              "#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+function seqColor(ratio){           // 0..1 magnitude -> ramp step
+  const r = Math.max(0, Math.min(1, ratio));
+  const ramp = isDark() ? [...RAMP].reverse() : RAMP;   // near-zero recedes toward surface
+  return ramp[Math.round(r * (ramp.length - 1))];
+}
+
+function showTip(ev, html){
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const x = Math.min(ev.clientX + 14, innerWidth - 250);
+  const y = Math.min(ev.clientY + 12, innerHeight - 80);
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip(){ tip.style.display = "none"; }
+
+async function api(path, body){
+  const r = await fetch(path, body
+    ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}
+    : undefined);
+  return r.json();
+}
+
+// ---------- render: stat tiles ----------
+function renderTiles(s){
+  const m = s.metrics;
+  const util = s.config.user_pages ? (m.mapped_lbas / s.config.user_pages * 100) : 0;
+  const tiles = [
+    ["WAF（累積）", m.waf.toFixed(3), "nand / host writes"],
+    ["Host 寫入", fmt(m.host_writes), "pages"],
+    ["GC 搬移", fmt(m.gc_writes), "pages"],
+    ["GC 次數", fmt(m.gc_runs), ""],
+    ["抹除次數", fmt(m.erases), "blocks"],
+    ["Free blocks", fmt(m.free_blocks), "of " + fmt(s.config.total_blocks)],
+    ["LBA 使用率", util.toFixed(1) + "%", fmt(m.mapped_lbas) + " mapped"],
+  ];
+  $("tiles").innerHTML = tiles.map(([k,v,d]) =>
+    `<div class="tile"><div class="k">${k}</div><div class="v mono">${v}</div><div class="d">${d}</div></div>`).join("");
+}
+
+// ---------- render: block map ----------
+function renderMap(s){
+  const cfg = s.config, ppb = s.pages_per_block;
+  const byDie = new Map();
+  for (const b of s.blocks){
+    if (!byDie.has(b.die)) byDie.set(b.die, []);
+    byDie.get(b.die).push(b);
+  }
+  const cols = Math.ceil(Math.sqrt(cfg.blocks_per_die));
+  let html = "";
+  for (const [die, blocks] of byDie){
+    html += `<div class="die"><div class="dh">CH${blocks[0].ch} / Die${die}</div>
+             <div class="cells" style="grid-template-columns:repeat(${cols},15px)">`;
+    for (const b of blocks){
+      let style = "", cls = "cell " + b.st;
+      if (b.st !== "free"){
+        style = `background:${seqColor(b.valid / ppb)};`;
+        if (b.st === "open") style += "border-color:var(--s2);";
+      }
+      html += `<div class="${cls}" style="${style}" data-i="${b.die}:${b.blk}"></div>`;
+    }
+    html += `</div></div>`;
+  }
+  $("diegrid").innerHTML = html;
+
+  const mid = seqColor(0.5), hi = seqColor(1);
+  $("maplegend").innerHTML =
+    `<span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>free</span>
+     <span><span class="sw" style="background:${mid};border:2px solid var(--s2)"></span>open（寫入中）</span>
+     <span><span class="sw" style="background:${seqColor(0.1)}"></span>→<span class="sw" style="background:${hi}"></span> valid page 比例 低→高</span>`;
+
+  const index = {};
+  for (const b of s.blocks) index[b.die + ":" + b.blk] = b;
+  $("diegrid").onmousemove = ev => {
+    const el = ev.target.closest(".cell");
+    if (!el){ hideTip(); return; }
+    const b = index[el.dataset.i];
+    showTip(ev, `<b>CH${b.ch} Die${b.die} Block ${b.blk}</b><br>
+      <span class="tk">狀態</span> ${b.st}<br>
+      <span class="tk">valid</span> ${b.valid}/${ppb}（written ${b.written}）<br>
+      <span class="tk">抹除次數</span> ${b.ec}`);
+  };
+  $("diegrid").onmouseleave = hideTip;
+}
+
+// ---------- render: WAF line chart ----------
+function renderWaf(s){
+  const H = s.history, box = $("wafchart");
+  if (H.length < 2){ box.innerHTML = `<div class="sub">執行 workload 後顯示曲線</div>`; return; }
+  const W = box.clientWidth || 420, Ht = 180, L = 42, R = 10, T = 10, B = 24;
+  const xs = H.map(h => h.host_writes);
+  const ys1 = H.map(h => h.waf_cum), ys2 = H.map(h => h.waf_win);
+  const xmin = xs[0], xmax = xs[xs.length-1];
+  const ymax = Math.max(1.05, ...ys1, ...ys2) * 1.08;
+  const X = v => L + (v - xmin) / Math.max(1, xmax - xmin) * (W - L - R);
+  const Y = v => T + (1 - v / ymax) * (Ht - T - B);
+  const pts = ys => H.map((h,i) => `${X(xs[i]).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(" ");
+  const yticks = [];
+  for (let v = 0; v <= ymax; v += ymax > 4 ? 1 : 0.5) yticks.push(v);
+  let g = yticks.map(v =>
+    `<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/>
+     <text x="${L-6}" y="${Y(v)+3.5}" text-anchor="end" class="mono">${v.toFixed(1)}</text>`).join("");
+  box.innerHTML =
+  `<svg width="${W}" height="${Ht}" style="display:block">
+     ${g}
+     <line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--baseline)"/>
+     <polyline points="${pts(ys2)}" fill="none" stroke="var(--s2)" stroke-width="2" stroke-linejoin="round"/>
+     <polyline points="${pts(ys1)}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>
+     <line id="xh" x1="0" x2="0" y1="${T}" y2="${Ht-B}" stroke="var(--baseline)" stroke-dasharray="3 3" visibility="hidden"/>
+     <text x="${(L+W-R)/2}" y="${Ht-6}" text-anchor="middle">host writes（累積 pages）</text>
+   </svg>`;
+  const svg = box.firstElementChild, xh = svg.querySelector("#xh");
+  svg.onmousemove = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = ev.clientX - r.left;
+    let best = 0, bd = 1e18;
+    for (let i = 0; i < H.length; i++){
+      const d = Math.abs(X(xs[i]) - px);
+      if (d < bd){ bd = d; best = i; }
+    }
+    xh.setAttribute("x1", X(xs[best])); xh.setAttribute("x2", X(xs[best]));
+    xh.setAttribute("visibility", "visible");
+    showTip(ev, `<b class="mono">${fmt(xs[best])}</b> <span class="tk">host writes</span><br>
+      <span class="sw" style="background:var(--s1)"></span>累積 WAF <b class="mono">${ys1[best].toFixed(3)}</b><br>
+      <span class="sw" style="background:var(--s2)"></span>區間 WAF <b class="mono">${ys2[best].toFixed(3)}</b>`);
+  };
+  svg.onmouseleave = () => { xh.setAttribute("visibility","hidden"); hideTip(); };
+}
+
+// ---------- render: erase-count histogram ----------
+function renderEc(s){
+  const box = $("echart");
+  const ecs = s.blocks.map(b => b.ec);
+  const mx = Math.max(...ecs), mn = Math.min(...ecs);
+  const W = box.clientWidth || 420, Ht = 150, L = 34, R = 10, T = 10, B = 24;
+  const nb = Math.min(20, mx - mn + 1);
+  const bw = (mx - mn + 1) / nb;
+  const buckets = new Array(nb).fill(0);
+  for (const e of ecs) buckets[Math.min(nb-1, Math.floor((e - mn) / bw))]++;
+  const cmax = Math.max(...buckets);
+  const X = i => L + i / nb * (W - L - R);
+  const colW = (W - L - R) / nb;
+  const Y = v => T + (1 - v / cmax) * (Ht - T - B);
+  const fill = isDark() ? "#3987e5" : "#2a78d6";
+  let bars = "";
+  const lbls = [];
+  for (let i = 0; i < nb; i++){
+    const lo = Math.round(mn + i * bw), hi = Math.round(mn + (i+1) * bw) - (bw >= 1 ? 1 : 0);
+    const lbl = bw <= 1 ? String(lo) : `${lo}–${hi}`;
+    lbls.push(lbl);
+    if (!buckets[i]) continue;
+    const h = Y(0) - Y(buckets[i]);
+    bars += `<rect x="${X(i)+1}" y="${Y(buckets[i])}" width="${colW-2}" height="${h}"
+              fill="${fill}" rx="3" data-b="${i}"/>`;
+  }
+  const step = Math.ceil(nb / 8);
+  let ax = "";
+  for (let i = 0; i < nb; i += step)
+    ax += `<text x="${X(i)+colW/2}" y="${Ht-8}" text-anchor="middle" class="mono">${lbls[i]}</text>`;
+  box.innerHTML =
+  `<svg width="${W}" height="${Ht}" style="display:block">
+     <line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--baseline)"/>
+     <text x="${L-5}" y="${Y(cmax)+4}" text-anchor="end" class="mono">${cmax}</text>
+     ${bars}${ax}
+     <text x="${(L+W-R)/2}" y="${Ht+0}" text-anchor="middle" visibility="hidden">.</text>
+   </svg>
+   <div class="sub mono">min ${mn} / max ${mx}　blocks=${ecs.length}</div>`;
+  box.querySelector("svg").onmousemove = ev => {
+    const el = ev.target.closest("rect[data-b]");
+    if (!el){ hideTip(); return; }
+    const i = +el.dataset.b;
+    showTip(ev, `<span class="tk">抹除次數</span> <b class="mono">${lbls[i]}</b><br>
+                 <span class="tk">block 數</span> <b class="mono">${buckets[i]}</b>`);
+  };
+  box.querySelector("svg").onmouseleave = hideTip;
+}
+
+// ---------- render: RAM & channels ----------
+function renderRam(s){
+  const r = s.ram, pct = Math.min(100, r.utilization * 100);
+  const ok = r.fits;
+  $("rampanel").innerHTML =
+    `<div class="charthead"><span class="t">Controller RAM（mapping table 常駐）</span>
+       <span class="okbadge" style="color:var(--${ok ? "good" : "bad"})">${ok ? "✓ 放得下" : "✗ 超出預算"}</span></div>
+     <div class="sub mono">mapping ${fmt(r.mapping_bytes)} B / 預算 ${fmt(r.budget_bytes)} B（${(r.utilization*100).toFixed(1)}%）</div>
+     <div class="rambar"><div style="width:${pct}%;${ok?"":"background:var(--bad)"}"></div></div>
+     <div class="sub" style="margin-top:6px">page-level 全表 = user_pages × 4B。放不下時就是換 block-level / hybrid / DFTL 的實驗起點。</div>`;
+
+  const ch = s.channels;
+  let rows = `<tr><th>CH</th><th>programs</th><th>reads</th><th>erases</th></tr>`;
+  for (let i = 0; i < ch.programs.length; i++)
+    rows += `<tr><td>CH${i}</td><td class="mono">${fmt(ch.programs[i])}</td>
+             <td class="mono">${fmt(ch.reads[i])}</td><td class="mono">${fmt(ch.erases[i])}</td></tr>`;
+  $("chtable").innerHTML = rows;
+}
+
+function renderAll(s){
+  const c = s.config;
+  $("cfgline").textContent =
+    `${c.channels} ch × ${c.dies_per_channel} die × ${c.blocks_per_die} blk × ${c.pages_per_block} pg × ${(c.page_size/1024)}KB`
+    + ` = ${c.nominal_mb}MB（OP ${(c.op_ratio*100).toFixed(1)}% → user ${fmt(c.user_pages)} pages）｜metadata-only`;
+  renderTiles(s); renderMap(s); renderWaf(s); renderEc(s); renderRam(s);
+}
+
+async function refresh(){ renderAll(await api("/api/state")); }
+
+// ---------- controls ----------
+let busy = false, timer = null;
+async function stepOnce(){
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await api("/api/run", {workload: $("wl").value, ops: +$("ops").value});
+    if (!r.ok) { say(r.error, false); stopAuto(); }
+    await refresh();
+  } finally { busy = false; }
+}
+function stopAuto(){
+  if (timer){ clearInterval(timer); timer = null; }
+  $("auto").textContent = "▶ 自動執行";
+  $("auto").classList.add("primary");
+}
+$("step").onclick = stepOnce;
+$("auto").onclick = () => {
+  if (timer){ stopAuto(); return; }
+  timer = setInterval(stepOnce, 350);
+  $("auto").textContent = "⏸ 停止";
+  $("auto").classList.remove("primary");
+};
+function say(text, ok){
+  const el = $("msg");
+  el.textContent = text;
+  el.style.color = ok ? "var(--good)" : "var(--bad)";
+  el.style.fontWeight = "600";
+  clearTimeout(say._t);
+  say._t = setTimeout(() => { el.textContent = ""; }, 6000);
+}
+$("verify").onclick = async () => {
+  const v = await api("/api/verify", {});
+  say(v.ok ? `✓ 驗證通過：${fmt(v.checked)} 個 LBA 全部一致`
+           : `✗ 發現 ${fmt(v.mismatches)} 個不一致（共 ${fmt(v.checked)}）`, v.ok);
+};
+$("reset").onclick = async () => {
+  const cur = (await api("/api/state")).config;
+  const ask = (msg, dflt) => {
+    const v = prompt(msg, dflt);
+    return v === null ? null : +v;
+  };
+  const channels = ask("Channels?", cur.channels); if (channels === null) return;
+  const bpd = ask("Blocks / die?", cur.blocks_per_die); if (bpd === null) return;
+  const ppb = ask("Pages / block?", cur.pages_per_block); if (ppb === null) return;
+  const op = ask("OP ratio (0–0.5)?", cur.op_ratio); if (op === null) return;
+  const ram = ask("Controller RAM (KB)?", cur.ram_kb); if (ram === null) return;
+  stopAuto();
+  const r = await api("/api/init", {channels, blocks_per_die:bpd, pages_per_block:ppb, op_ratio:op, ram_kb:ram});
+  if (!r.ok) say(r.error, false); else say("已重設", true);
+  await refresh();
+};
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refresh);
+addEventListener("resize", () => refresh());
+refresh();
+</script>
+</body>
+</html>
