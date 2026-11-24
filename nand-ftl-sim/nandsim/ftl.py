@@ -11,6 +11,7 @@ LBA through the FTL and compares both the reverse-mapped LBA and the tag.
 """
 
 from array import array
+from collections import deque
 
 from .nand import VALID, SimViolation
 from .controller import Controller
@@ -20,7 +21,7 @@ class PageFTL:
     GC_LOW_WATER = 2          # run GC when a die's free-block pool drops to this
     MAP_ENTRY_BYTES = 4
 
-    def __init__(self, ctrl: Controller):
+    def __init__(self, ctrl: Controller, wl_interval=0):
         self.ctrl = ctrl
         cfg = ctrl.cfg
         self.cfg = cfg
@@ -28,8 +29,13 @@ class PageFTL:
         self.map = array("i", [-1]) * self.user_pages
 
         nd = cfg.ndies
-        # free-block pools, one per die (stacks)
-        self.free = [list(range(cfg.blocks_per_die - 1, -1, -1)) for _ in range(nd)]
+        # free-block pools, one per die. FIFO queues: every freed block goes
+        # to the back and allocation takes from the front, so all free blocks
+        # circulate (a LIFO stack would leave the bottom entries unused and
+        # pinned at erase count 0 forever). The reserved system area
+        # [0, reserved_blocks_per_die) is never handed to the FTL.
+        rsv = cfg.reserved_blocks_per_die
+        self.free = [deque(range(rsv, cfg.blocks_per_die)) for _ in range(nd)]
         self.host_open = [None] * nd    # active block receiving host writes
         self.gc_open = [None] * nd      # active block receiving GC relocations
         self.rr = 0                     # round-robin die cursor for striping
@@ -41,6 +47,13 @@ class PageFTL:
         self.erases = 0
         self.wseq = 0
         self.lba_writes = array("i", [0]) * self.user_pages   # logical heat
+
+        # static wear leveling: every wl_interval host writes, force-collect
+        # the coldest fully-programmed block (lowest erase count) so cold
+        # data rotates and the block rejoins the pool. 0 = disabled.
+        self.wl_interval = int(wl_interval)
+        self._wl_countdown = self.wl_interval
+        self.wl_runs = 0
 
         # host-side shadow table for verification (not controller RAM)
         self.shadow = {}
@@ -64,6 +77,12 @@ class PageFTL:
         self.host_writes += 1
         self.lba_writes[lba] += 1
         self.shadow[lba] = tag
+
+        if self.wl_interval > 0:
+            self._wl_countdown -= 1
+            if self._wl_countdown <= 0:
+                self._wl_countdown = self.wl_interval
+                self._static_wl()
 
     def read(self, lba):
         ppa = self.map[lba]
@@ -96,7 +115,7 @@ class PageFTL:
         if not self.free[die]:
             raise SimViolation(f"die {die}: free-block pool exhausted "
                                f"(over-provisioning too small?)")
-        return self.free[die].pop()
+        return self.free[die].popleft()
 
     def _gc_if_needed(self, die):
         while len(self.free[die]) <= self.GC_LOW_WATER:
@@ -141,6 +160,31 @@ class PageFTL:
         self.gc_runs += 1
         self.free[die].append(victim)
 
+    def _static_wl(self):
+        """Periodic cold-block GC: force-collect the fully-programmed block
+        with the lowest erase count, valid data and all, so wear spreads to
+        blocks the greedy victim policy would never touch."""
+        cfg = self.cfg
+        rsv = cfg.reserved_blocks_per_die
+        ppb = cfg.pages_per_block
+        best = None            # (die, block)
+        best_ec = None
+        for die in range(cfg.ndies):
+            if len(self.free[die]) < 2:     # keep headroom for the relocation
+                continue
+            d = self.ctrl.dies[die]
+            for b in range(rsv, cfg.blocks_per_die):
+                if b == self.host_open[die] or b == self.gc_open[die]:
+                    continue
+                if d.next_page[b] < ppb:    # free or still open
+                    continue
+                ec = d.erase_count[b]
+                if best_ec is None or ec < best_ec:
+                    best, best_ec = (die, b), ec
+        if best is not None:
+            self._collect(*best)
+            self.wl_runs += 1
+
     # ---- reporting ------------------------------------------------------
     def verify(self):
         """Re-read every mapped LBA and compare against the shadow table."""
@@ -165,6 +209,7 @@ class PageFTL:
             "nand_writes": nand_writes,
             "waf": round(waf, 4),
             "gc_runs": self.gc_runs,
+            "wl_runs": self.wl_runs,
             "erases": self.erases,
             "free_blocks": sum(len(f) for f in self.free),
             "mapped_lbas": len(self.shadow),

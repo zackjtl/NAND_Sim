@@ -21,10 +21,10 @@ PORT = 8732
 
 
 class Sim:
-    def __init__(self, **kw):
+    def __init__(self, wl_interval=5000, **kw):
         self.cfg = NandConfig(**kw)
         self.ctrl = Controller(self.cfg)
-        self.ftl = PageFTL(self.ctrl)
+        self.ftl = PageFTL(self.ctrl, wl_interval=wl_interval)
         self.workloads = {}
         self.history = []          # per-run-interval snapshots
         self._last = (0, 0, 0, 0)  # (host_w, nand_w, gc_reads+host_reads, erases)
@@ -37,8 +37,9 @@ class Sim:
         run_ops(self.ftl, wl, ops)
         m = self.ftl.metrics()
         reads = sum(self.ctrl.ch_reads)
-        ec_min = min(min(d.erase_count) for d in self.ctrl.dies)
-        ec_max = max(max(d.erase_count) for d in self.ctrl.dies)
+        rsv = self.cfg.reserved_blocks_per_die   # system area: not in wear stats
+        ec_min = min(min(d.erase_count[rsv:]) for d in self.ctrl.dies)
+        ec_max = max(max(d.erase_count[rsv:]) for d in self.ctrl.dies)
         h0, n0, r0, e0 = self._last
         dh, dn = m["host_writes"] - h0, m["nand_writes"] - n0
         self.history.append({
@@ -60,11 +61,14 @@ class Sim:
     def state(self):
         blocks = []
         ppb = self.cfg.pages_per_block
+        rsv = self.cfg.reserved_blocks_per_die
         for d_idx, die in enumerate(self.ctrl.dies):
             ch = self.ctrl.channel_of(d_idx)
             for b in range(self.cfg.blocks_per_die):
                 np_ = die.next_page[b]
-                if np_ == 0:
+                if b < rsv:
+                    st = "rsv"
+                elif np_ == 0:
                     st = "free"
                 elif np_ < ppb:
                     st = "open"
@@ -73,13 +77,14 @@ class Sim:
                 blocks.append({
                     "ch": ch, "die": d_idx, "blk": b, "st": st,
                     "valid": die.valid_count[b], "written": np_,
-                    "ec": die.erase_count[b],
+                    "ec": die.erase_count[b], "rsv": b < rsv,
                 })
         return {
             "config": self.cfg.as_dict(),
             "metrics": self.ftl.metrics(),
             "ram": self.ftl.ram_report(),
             "ftl": self.ftl.alloc_state(),
+            "wl_interval": self.ftl.wl_interval,
             "lba_heat": self.ftl.lba_heat(),
             "oplog": [list(e) for e in self.ctrl.oplog],
             "channels": {
@@ -97,7 +102,8 @@ SIM = Sim()
 LOCK = threading.Lock()
 
 CONFIG_KEYS = ("channels", "dies_per_channel", "blocks_per_die",
-               "pages_per_block", "page_size", "op_ratio", "ram_kb")
+               "pages_per_block", "page_size", "op_ratio", "ram_kb",
+               "reserved_blocks_per_die")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,6 +136,8 @@ class Handler(BaseHTTPRequestHandler):
             req = self._body()
             if self.path == "/api/init":
                 kw = {k: req[k] for k in CONFIG_KEYS if k in req}
+                if "wl_interval" in req:
+                    kw["wl_interval"] = int(req["wl_interval"])
                 with LOCK:
                     SIM = Sim(**kw)
                     self._send(200, {"ok": True, "config": SIM.cfg.as_dict()})

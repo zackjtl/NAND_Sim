@@ -8,7 +8,8 @@ from nandsim import NandConfig, Controller, PageFTL, Workload, run_ops, SimViola
 
 
 def test_nand_rules():
-    cfg = NandConfig(channels=1, blocks_per_die=4, pages_per_block=4)
+    cfg = NandConfig(channels=1, blocks_per_die=4, pages_per_block=4,
+                     reserved_blocks_per_die=0)
     ctrl = Controller(cfg)
     ctrl.program(ctrl.encode(0, 0, 0), lba=7, tag=1)
     # non-sequential program must fail
@@ -46,8 +47,35 @@ def test_ftl(kind, ops):
           f"verify={v['checked']} ok  ({ops/dt/1000:.0f} kops/s)")
 
 
+def test_static_wl(ops=200_000):
+    """With periodic cold-block GC the coldest usable block must get worn too."""
+    cfg = NandConfig()
+    rsv = cfg.reserved_blocks_per_die
+
+    def ec_range(ctrl):
+        return (min(min(d.erase_count[rsv:]) for d in ctrl.dies),
+                max(max(d.erase_count[rsv:]) for d in ctrl.dies))
+
+    # one WL sweep must be able to cover every usable block within the run:
+    # interval 500 -> 400 triggers > 248 usable blocks
+    WL = 500
+    results = {}
+    for wl_interval in (0, WL):
+        ctrl = Controller(cfg)
+        ftl = PageFTL(ctrl, wl_interval=wl_interval)
+        run_ops(ftl, Workload(cfg.user_pages, kind="hotcold", seed=7), ops)
+        v = ftl.verify()
+        assert v["ok"], f"integrity FAILED with wl_interval={wl_interval}: {v}"
+        results[wl_interval] = ec_range(ctrl)
+    (mn0, mx0), (mn1, mx1) = results[0], results[WL]
+    assert mn1 > 0, "static WL did not touch cold blocks"
+    assert (mx1 - mn1) < (mx0 - mn0), "static WL did not narrow the EC gap"
+    print(f"static WL: off Δ={mx0-mn0} (min {mn0}) -> on Δ={mx1-mn1} (min {mn1})  OK")
+
+
 if __name__ == "__main__":
     test_nand_rules()
     for kind in ("seq", "rand", "hotcold"):
         test_ftl(kind, 200_000)
+    test_static_wl()
     print("ALL PASSED")

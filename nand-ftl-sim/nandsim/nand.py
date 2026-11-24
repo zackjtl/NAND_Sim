@@ -24,7 +24,7 @@ class SimViolation(Exception):
 class NandConfig:
     def __init__(self, channels=4, dies_per_channel=1, blocks_per_die=64,
                  pages_per_block=64, page_size=16384, op_ratio=0.125,
-                 ram_kb=512):
+                 ram_kb=512, reserved_blocks_per_die=2):
         self.channels = int(channels)
         self.dies_per_channel = int(dies_per_channel)
         self.blocks_per_die = int(blocks_per_die)
@@ -32,6 +32,12 @@ class NandConfig:
         self.page_size = int(page_size)
         self.op_ratio = float(op_ratio)
         self.ram_kb = int(ram_kb)
+        # system-table area at the head of each die: never allocated, never
+        # erased, never updated - excluded from wear statistics
+        self.reserved_blocks_per_die = int(reserved_blocks_per_die)
+        if not 0 <= self.reserved_blocks_per_die <= self.blocks_per_die - 2:
+            raise ValueError("reserved_blocks_per_die must leave at least "
+                             "2 usable blocks per die")
 
     @property
     def ndies(self):
@@ -46,9 +52,18 @@ class NandConfig:
         return self.total_blocks * self.pages_per_block
 
     @property
+    def usable_blocks_per_die(self):
+        return self.blocks_per_die - self.reserved_blocks_per_die
+
+    @property
+    def usable_pages(self):
+        """Pages the FTL may allocate (reserved system area excluded)."""
+        return self.ndies * self.usable_blocks_per_die * self.pages_per_block
+
+    @property
     def user_pages(self):
-        """Exported capacity in pages (total minus over-provisioning)."""
-        return int(self.total_pages * (1.0 - self.op_ratio))
+        """Exported capacity in pages (usable minus over-provisioning)."""
+        return int(self.usable_pages * (1.0 - self.op_ratio))
 
     @property
     def nominal_bytes(self):
@@ -63,6 +78,7 @@ class NandConfig:
             "page_size": self.page_size,
             "op_ratio": self.op_ratio,
             "ram_kb": self.ram_kb,
+            "reserved_blocks_per_die": self.reserved_blocks_per_die,
             "total_blocks": self.total_blocks,
             "total_pages": self.total_pages,
             "user_pages": self.user_pages,

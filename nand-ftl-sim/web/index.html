@@ -113,6 +113,11 @@
           background:var(--page); border:1px dashed var(--baseline); }
   .cell.open { border:2px solid var(--s2); border-style:solid; }
   .cell.full { border:1px solid var(--ring); border-style:solid; }
+  .cell.rsv {
+    background:repeating-linear-gradient(45deg,
+      var(--grid), var(--grid) 3px, var(--page) 3px, var(--page) 6px);
+    border:1px solid var(--baseline);
+  }
   .legendrow { display:flex; gap:14px; align-items:center; margin-top:10px; flex-wrap:wrap;
                font-size:11.5px; color:var(--ink2); }
   .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
@@ -212,7 +217,7 @@
     </div>
     <div class="grid2">
       <div class="panel">
-        <div class="ph"><span class="t">Erase Count 最大 / 最小趨勢（wear leveling 指標）</span>
+        <div class="ph"><span class="t">Erase Count 最大 / 最小趨勢（wear leveling 指標，排除系統保留）</span>
           <span class="lg">
             <span><span class="sw" style="background:var(--s1)"></span>最大</span>
             <span><span class="sw" style="background:var(--s2)"></span>最小</span>
@@ -274,6 +279,8 @@ function renderTiles(s){
     ["Host 寫入", fmt(m.host_writes), "pages"],
     ["GC 搬移", fmt(m.gc_writes), "pages"],
     ["GC 次數", fmt(m.gc_runs), ""],
+    ["靜態 WL", fmt(m.wl_runs),
+     s.wl_interval > 0 ? `每 ${fmt(s.wl_interval)} 寫入觸發` : "停用"],
     ["LBA 使用率", util.toFixed(1) + "%", fmt(m.mapped_lbas) + " mapped"],
   ];
   $("tiles").innerHTML = tiles.map(([k,v,d]) =>
@@ -432,7 +439,7 @@ function renderMap(s){
              <div class="cells" style="grid-template-columns:repeat(${cols},15px)">`;
     for (const b of blocks){
       let style = "", cls = "cell " + b.st;
-      if (b.st !== "free"){
+      if (b.st !== "free" && b.st !== "rsv"){
         style = `background:${seqColor(b.valid / ppb)};`;
         if (b.st === "open") style += "border-color:var(--s2);";
       }
@@ -442,7 +449,8 @@ function renderMap(s){
   }
   $("diegrid").innerHTML = html;
   $("maplegend").innerHTML =
-    `<span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>free</span>
+    `<span><span class="sw" style="background:repeating-linear-gradient(45deg,var(--grid),var(--grid) 3px,var(--page) 3px,var(--page) 6px);border:1px solid var(--baseline)"></span>系統保留（不列入統計）</span>
+     <span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>free</span>
      <span><span class="sw" style="background:${seqColor(0.5)};border:2px solid var(--s2)"></span>open（寫入中）</span>
      <span><span class="sw" style="background:${seqColor(0.1)}"></span>→<span class="sw" style="background:${seqColor(1)}"></span> valid page 比例 低→高</span>
      <span class="sub">（NAND 眼中的世界：只有實體位置與狀態）</span>`;
@@ -453,6 +461,12 @@ function renderMap(s){
     const el = ev.target.closest(".cell");
     if (!el){ hideTip(); return; }
     const b = index[el.dataset.i];
+    if (b.rsv){
+      showTip(ev, `<b>CH${b.ch} Die${b.die} Block ${b.blk}</b><br>
+        <span class="tk">狀態</span> 系統保留（system table 區）<br>
+        永不抹除、永不更新，不列入磨損統計`);
+      return;
+    }
     showTip(ev, `<b>CH${b.ch} Die${b.die} Block ${b.blk}</b><br>
       <span class="tk">狀態</span> ${b.st}<br>
       <span class="tk">valid</span> ${b.valid}/${ppb}（written ${b.written}）<br>
@@ -464,7 +478,8 @@ function renderMap(s){
 
 function renderEc(s){
   const box = $("echart");
-  const ecs = s.blocks.map(b => b.ec);
+  const ecs = s.blocks.filter(b => !b.rsv).map(b => b.ec);
+  const nrsv = s.blocks.length - ecs.length;
   const mx = Math.max(...ecs), mn = Math.min(...ecs);
   const W = box.clientWidth || 420, Ht = 150, L = 34, R = 10, T = 10, B = 24;
   const nb = Math.min(20, mx - mn + 1);
@@ -495,7 +510,7 @@ function renderEc(s){
      <text x="${L-5}" y="${Y(cmax)+4}" text-anchor="end" class="mono">${cmax}</text>
      ${bars}${ax}
    </svg>
-   <div class="sub mono">min ${mn} / max ${mx}　blocks=${ecs.length}</div>`;
+   <div class="sub mono">min ${mn} / max ${mx}　blocks=${ecs.length}（已排除 ${nrsv} 個系統保留）</div>`;
   box.querySelector("svg").onmousemove = ev => {
     const el = ev.target.closest("rect[data-b]");
     if (!el){ hideTip(); return; }
@@ -575,7 +590,7 @@ function renderAll(s){
   const c = s.config;
   $("cfgline").textContent =
     `${c.channels} ch × ${c.dies_per_channel} die × ${c.blocks_per_die} blk × ${c.pages_per_block} pg × ${(c.page_size/1024)}KB`
-    + ` = ${c.nominal_mb}MB（OP ${(c.op_ratio*100).toFixed(1)}% → user ${fmt(c.user_pages)} pages）｜metadata-only`;
+    + ` = ${c.nominal_mb}MB（OP ${(c.op_ratio*100).toFixed(1)}%、保留 ${c.reserved_blocks_per_die} blk/die → user ${fmt(c.user_pages)} pages）｜metadata-only`;
   renderTiles(s);
   renderLbaHeat(s);
   renderWaf(s);
@@ -627,7 +642,8 @@ $("verify").onclick = async () => {
            : `✗ 發現 ${fmt(v.mismatches)} 個不一致（共 ${fmt(v.checked)}）`, v.ok);
 };
 $("reset").onclick = async () => {
-  const cur = (await api("/api/state")).config;
+  const s0 = await api("/api/state");
+  const cur = s0.config;
   const ask = (msg, dflt) => {
     const v = prompt(msg, dflt);
     return v === null ? null : +v;
@@ -637,8 +653,10 @@ $("reset").onclick = async () => {
   const ppb = ask("Pages / block?", cur.pages_per_block); if (ppb === null) return;
   const op = ask("OP ratio (0–0.5)?", cur.op_ratio); if (op === null) return;
   const ram = ask("Controller RAM (KB)?", cur.ram_kb); if (ram === null) return;
+  const rsv = ask("Reserved system blocks / die?", cur.reserved_blocks_per_die); if (rsv === null) return;
+  const wl = ask("Static WL interval（每 N 次 host 寫入觸發冷 block GC，0=停用）?", s0.wl_interval); if (wl === null) return;
   stopAuto();
-  const r = await api("/api/init", {channels, blocks_per_die:bpd, pages_per_block:ppb, op_ratio:op, ram_kb:ram});
+  const r = await api("/api/init", {channels, blocks_per_die:bpd, pages_per_block:ppb, op_ratio:op, ram_kb:ram, reserved_blocks_per_die:rsv, wl_interval:wl});
   if (!r.ok) say(r.error, false); else say("已重設", true);
   await refresh();
 };

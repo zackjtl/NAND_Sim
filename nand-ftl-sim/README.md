@@ -13,7 +13,11 @@ nandsim/nand.py        NAND die 模型：強制執行三條規則
 nandsim/controller.py  Controller：channel/die 路由、PPA 編解碼、
                        per-channel 操作計數、RAM 預算回報
 nandsim/ftl.py         Page-level FTL：round-robin channel striping、
-                       greedy GC、host 端影子表完整性驗證
+                       greedy GC、host 端影子表完整性驗證、
+                       static wear leveling（每 N 次 host 寫入強制
+                       回收 erase count 最低的冷 block，0=停用）、
+                       FIFO free pool（LIFO stack 會讓堆底 block
+                       永遠輪不到而卡在 EC 0）
 nandsim/workload.py    Workload：循序 / 均勻隨機 / 冷熱 80-20
 server.py              HTTP API + 前端（stdlib http.server，port 8732）
 web/index.html         觀察前端，分成兩個模組區塊呈現互動：
@@ -37,7 +41,13 @@ python server.py       # 開 http://localhost:8732
 ## 預設幾何（可在前端「重設…」調整）
 
 4 channel × 1 die × 64 block × 64 page × 16KB = 256MB，OP 12.5%，
-controller RAM 512KB（page-level 全表 56KB，放得下）。
+controller RAM 512KB（page-level 全表 56KB，放得下），每 die 保留
+2 個系統表格 block（永不配置、永不抹除，排除於所有磨損統計之外），
+static WL 間隔 5,000 次 host 寫入。
+
+注意：WL 間隔要和 usable block 數量匹配 —— 一輪完整的冷 block
+輪替需要「間隔 × usable block 數」的寫入量，間隔太疏時最小 EC
+會長期貼 0，看起來像 WL 沒作用。
 
 ## 實測基準（selftest, 200k 寫入）
 
@@ -51,6 +61,7 @@ controller RAM 512KB（page-level 全表 56KB，放得下）。
 
 - RAM 放不下時的 mapping：block-level / hybrid（BAST/FAST）/ DFTL
 - GC victim 改 cost-benefit、加冷熱資料分流（hot/cold stream）
-- static wear leveling（目前抹除分布可在前端直方圖觀察）
+- static WL 變體：EC 門檻觸發（max-min 超過閾值才動）、冷資料直接
+  搬進最老 block（swap）而非只回收
 - timing model（tR/tProg/tBERS + channel bus 競爭）估算 throughput
 - 對接真實產品幾何參數做對照實驗
