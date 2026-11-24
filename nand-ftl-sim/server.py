@@ -17,7 +17,7 @@ ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
 from nandsim import NandConfig, Controller, PageFTL, Workload, run_ops, SimViolation
-PORT = 8731
+PORT = 8732
 
 
 class Sim:
@@ -26,8 +26,8 @@ class Sim:
         self.ctrl = Controller(self.cfg)
         self.ftl = PageFTL(self.ctrl)
         self.workloads = {}
-        self.history = []          # [{host_writes, waf_cum, waf_win}]
-        self._last = (0, 0)        # (host_writes, nand_writes) at last snapshot
+        self.history = []          # per-run-interval snapshots
+        self._last = (0, 0, 0, 0)  # (host_w, nand_w, gc_reads+host_reads, erases)
 
     def run(self, kind, ops):
         wl = self.workloads.get(kind)
@@ -36,16 +36,21 @@ class Sim:
             self.workloads[kind] = wl
         run_ops(self.ftl, wl, ops)
         m = self.ftl.metrics()
-        h0, n0 = self._last
+        reads = sum(self.ctrl.ch_reads)
+        h0, n0, r0, e0 = self._last
         dh, dn = m["host_writes"] - h0, m["nand_writes"] - n0
         self.history.append({
             "host_writes": m["host_writes"],
             "waf_cum": m["waf"],
             "waf_win": round(dn / dh, 4) if dh else 0.0,
+            "d_host": dh,
+            "d_gc": dn - dh,
+            "d_read": reads - r0,
+            "d_erase": m["erases"] - e0,
         })
         if len(self.history) > 400:
             self.history = self.history[-400:]
-        self._last = (m["host_writes"], m["nand_writes"])
+        self._last = (m["host_writes"], m["nand_writes"], reads, m["erases"])
         return m
 
     def state(self):
@@ -70,6 +75,9 @@ class Sim:
             "config": self.cfg.as_dict(),
             "metrics": self.ftl.metrics(),
             "ram": self.ftl.ram_report(),
+            "ftl": self.ftl.alloc_state(),
+            "lba_heat": self.ftl.lba_heat(),
+            "oplog": [list(e) for e in self.ctrl.oplog],
             "channels": {
                 "programs": self.ctrl.ch_programs,
                 "reads": self.ctrl.ch_reads,

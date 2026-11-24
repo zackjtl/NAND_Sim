@@ -40,6 +40,7 @@ class PageFTL:
         self.gc_runs = 0
         self.erases = 0
         self.wseq = 0
+        self.lba_writes = array("i", [0]) * self.user_pages   # logical heat
 
         # host-side shadow table for verification (not controller RAM)
         self.shadow = {}
@@ -58,9 +59,10 @@ class PageFTL:
         die = self.rr
         self.rr = (self.rr + 1) % self.cfg.ndies
         ppa = self._alloc(die, for_gc=False)
-        self.ctrl.program(ppa, lba, tag)
+        self.ctrl.program(ppa, lba, tag, origin="host")
         self.map[lba] = ppa
         self.host_writes += 1
+        self.lba_writes[lba] += 1
         self.shadow[lba] = tag
 
     def read(self, lba):
@@ -128,12 +130,13 @@ class PageFTL:
         for page in range(ppb):
             if d.page_state(victim, page) != VALID:
                 continue
-            lba, tag = d.read(victim, page)
+            lba, tag = self.ctrl.read(self.ctrl.encode(die, victim, page),
+                                      origin="gc")
             dst = self._alloc(die, for_gc=True)
-            self.ctrl.program(dst, lba, tag)
+            self.ctrl.program(dst, lba, tag, origin="gc")
             self.map[lba] = dst
             self.gc_writes += 1
-        self.ctrl.erase(die, victim)
+        self.ctrl.erase(die, victim, origin="gc")
         self.erases += 1
         self.gc_runs += 1
         self.free[die].append(victim)
@@ -170,3 +173,27 @@ class PageFTL:
     def ram_report(self):
         mapping_bytes = self.user_pages * self.MAP_ENTRY_BYTES
         return self.ctrl.ram_report(mapping_bytes)
+
+    def alloc_state(self):
+        """FTL-internal allocation state, for visualization."""
+        return {
+            "host_open": list(self.host_open),
+            "gc_open": list(self.gc_open),
+            "free_per_die": [len(f) for f in self.free],
+            "gc_low_water": self.GC_LOW_WATER,
+        }
+
+    def lba_heat(self, nbuckets=128):
+        """Logical-space view: host-write heat and mapped ratio per bucket."""
+        n = self.user_pages
+        nb = min(nbuckets, n)
+        writes = [0] * nb
+        mapped = [0] * nb
+        size = [0] * nb
+        for i in range(n):
+            b = i * nb // n
+            writes[b] += self.lba_writes[i]
+            size[b] += 1
+            if self.map[i] >= 0:
+                mapped[b] += 1
+        return {"buckets": nb, "writes": writes, "mapped": mapped, "size": size}

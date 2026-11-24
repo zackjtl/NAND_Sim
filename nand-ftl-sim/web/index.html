@@ -11,6 +11,7 @@
     --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
     --grid:#e1e0d9; --baseline:#c3c2b7; --ring:rgba(11,11,11,0.10);
     --s1:#2a78d6; --s2:#eb6834;
+    --c-ph:#2a78d6; --c-pg:#6250d6; --c-rd:#1baf7a; --c-er:#e34948;
     --good:#006300; --bad:#d03b3b;
   }
   @media (prefers-color-scheme: dark) {
@@ -20,6 +21,7 @@
       --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --baseline:#383835; --ring:rgba(255,255,255,0.10);
       --s1:#3987e5; --s2:#d95926;
+      --c-ph:#3987e5; --c-pg:#9085e9; --c-rd:#199e70; --c-er:#e66767;
       --good:#0ca30c; --bad:#d03b3b;
     }
   }
@@ -27,21 +29,35 @@
   body {
     margin:0; background:var(--page); color:var(--ink);
     font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
-    padding:16px;
+    padding:16px; max-width:1180px; margin-inline:auto;
   }
   h1 { font-size:17px; margin:0; }
-  .sub { color:var(--ink2); font-size:12px; margin-top:2px; }
-  .card {
-    background:var(--surface); border:1px solid var(--ring);
-    border-radius:10px; padding:14px;
-  }
+  .sub { color:var(--ink2); font-size:12px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  header.row { justify-content:space-between; margin-bottom:12px; }
-  main { display:grid; grid-template-columns: minmax(380px,1.2fr) minmax(340px,1fr); gap:12px; }
-  @media (max-width:900px){ main { grid-template-columns:1fr; } }
-  .col { display:flex; flex-direction:column; gap:12px; }
+  header.row { justify-content:space-between; margin-bottom:14px; }
 
-  /* controls */
+  /* ---- module frames ---- */
+  .module {
+    background:var(--surface); border:1px solid var(--ring);
+    border-radius:12px; overflow:hidden; margin-bottom:0;
+  }
+  .module > .mh {
+    display:flex; align-items:baseline; gap:10px; padding:10px 16px;
+    border-bottom:1px solid var(--grid);
+  }
+  .module > .mh .mt { font-size:14px; font-weight:700; letter-spacing:.3px; }
+  .module > .mh .md { font-size:12px; color:var(--ink2); }
+  .module.ftl  { border-top:3px solid var(--s1); }
+  .module.nand { border-top:3px solid var(--s2); }
+  .mbody { padding:14px 16px; display:flex; flex-direction:column; gap:14px; }
+
+  .panel { border:1px solid var(--grid); border-radius:10px; padding:12px; }
+  .panel .ph { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .panel .ph .t { font-size:12.5px; font-weight:600; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:880px){ .grid2 { grid-template-columns:1fr; } }
+
+  /* ---- controls ---- */
   label.ctl { display:flex; align-items:center; gap:6px; color:var(--ink2); font-size:13px; }
   select,input[type=number] {
     background:var(--surface); color:var(--ink); border:1px solid var(--baseline);
@@ -54,24 +70,43 @@
   }
   button:hover { border-color:var(--ink2); }
   button.primary { background:var(--s1); border-color:var(--s1); color:#fff; }
-  button[disabled] { opacity:.5; cursor:default; }
 
-  /* stat tiles */
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin:12px 0; }
-  .tile { background:var(--surface); border:1px solid var(--ring); border-radius:10px; padding:10px 12px; }
+  /* ---- tiles ---- */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:10px; }
+  .tile { border:1px solid var(--grid); border-radius:10px; padding:9px 11px; }
   .tile .k { font-size:11.5px; color:var(--ink2); }
-  .tile .v { font-size:22px; font-weight:650; margin-top:2px; }
+  .tile .v { font-size:20px; font-weight:650; margin-top:2px; }
   .tile .d { font-size:11px; color:var(--muted); }
 
-  /* block map */
+  /* ---- LBA heat strip ---- */
+  .lbacells { display:grid; grid-template-columns:repeat(32,1fr); gap:2px; }
+  .lbacell { aspect-ratio:1; border-radius:2.5px; background:var(--page);
+             border:1px dashed var(--baseline); }
+  .lbacell.m { border-style:solid; border-color:transparent; }
+
+  /* ---- bus band ---- */
+  .bus {
+    margin:10px auto; padding:10px 16px; max-width:860px;
+    display:flex; gap:18px; align-items:flex-start; justify-content:center; flex-wrap:wrap;
+    border:1px dashed var(--baseline); border-radius:12px; background:var(--page);
+  }
+  .bus .flows { display:flex; flex-direction:column; gap:4px; min-width:250px; font-size:12.5px; }
+  .bus .fl { display:flex; align-items:center; gap:7px; color:var(--ink2); }
+  .bus .fl b { color:var(--ink); font-variant-numeric:tabular-nums; }
+  .bus .ar { font-size:15px; width:16px; text-align:center; }
+  .ticker { flex:1; min-width:280px; max-width:460px; }
+  .ticker .th { font-size:11.5px; color:var(--muted); margin-bottom:4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:4px 8px; font-size:11px; color:var(--ink2);
+           font-variant-numeric:tabular-nums; }
+  .chip { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+
+  /* ---- block map ---- */
   .diegrid { display:flex; flex-wrap:wrap; gap:14px; }
-  .die { }
   .die .dh { font-size:11.5px; color:var(--ink2); margin-bottom:5px; }
   .cells { display:grid; gap:2px; }
-  .cell {
-    width:15px; height:15px; border-radius:3px;
-    background:var(--page); border:1px dashed var(--baseline);
-  }
+  .cell { width:15px; height:15px; border-radius:3px;
+          background:var(--page); border:1px dashed var(--baseline); }
   .cell.open { border:2px solid var(--s2); border-style:solid; }
   .cell.full { border:1px solid var(--ring); border-style:solid; }
   .legendrow { display:flex; gap:14px; align-items:center; margin-top:10px; flex-wrap:wrap;
@@ -79,22 +114,19 @@
   .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:4px; }
 
   svg text { font:11px system-ui,-apple-system,"Segoe UI",sans-serif; fill:var(--muted); }
-  .charthead { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
-  .charthead .t { font-size:13px; font-weight:600; }
   .lg { font-size:11.5px; color:var(--ink2); display:flex; gap:12px; }
-
   #tip {
     position:fixed; display:none; pointer-events:none; z-index:10;
     background:var(--surface); border:1px solid var(--ring); border-radius:7px;
     box-shadow:0 2px 10px rgba(0,0,0,.18); padding:6px 9px; font-size:12px;
-    color:var(--ink); max-width:230px;
+    color:var(--ink); max-width:240px;
   }
   #tip .tk { color:var(--ink2); }
   .rambar { height:8px; border-radius:4px; background:var(--grid); overflow:hidden; margin-top:6px; }
   .rambar > div { height:100%; background:var(--s1); }
-  .okbadge { font-weight:600; }
+  .okbadge { font-weight:600; font-size:12px; }
   .mono { font-variant-numeric: tabular-nums; }
-  table.ch { border-collapse:collapse; width:100%; margin-top:4px; font-size:12.5px; }
+  table.ch { border-collapse:collapse; width:100%; font-size:12.5px; }
   table.ch td, table.ch th { padding:3px 6px; text-align:right; color:var(--ink2); }
   table.ch th { color:var(--muted); font-weight:500; border-bottom:1px solid var(--grid); }
   table.ch td:first-child, table.ch th:first-child { text-align:left; }
@@ -106,8 +138,9 @@
     <h1>NAND / FTL Simulator</h1>
     <div class="sub" id="cfgline">載入中…</div>
   </div>
-  <div class="row" id="controls">
-    <label class="ctl">Workload
+  <div class="row">
+    <span class="sub" style="font-weight:600">Host&nbsp;workload</span>
+    <label class="ctl">
       <select id="wl">
         <option value="rand">隨機寫 (uniform)</option>
         <option value="seq">循序寫</option>
@@ -123,38 +156,68 @@
   </div>
 </header>
 
-<div class="tiles" id="tiles"></div>
+<!-- ===================== FTL module ===================== -->
+<section class="module ftl">
+  <div class="mh"><span class="mt">FTL（控制器韌體）</span>
+    <span class="md">邏輯視角：LBA 空間、映射表、配置與 GC 決策 —— 看不到實體 block，只下命令</span></div>
+  <div class="mbody">
+    <div class="tiles" id="tiles"></div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph"><span class="t">邏輯 LBA 空間（host 寫入熱度）</span><span class="sub" id="lbainfo"></span></div>
+        <div class="lbacells" id="lbaheat"></div>
+        <div class="legendrow" id="lbalegend"></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span class="t">WAF 隨寫入量變化</span>
+          <span class="lg">
+            <span><span class="sw" style="background:var(--s1)"></span>累積</span>
+            <span><span class="sw" style="background:var(--s2)"></span>區間</span>
+          </span></div>
+        <div id="wafchart"></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph"><span class="t">寫入配置狀態（open block / free pool，FTL 內部指標）</span></div>
+        <table class="ch" id="alloctable"></table>
+      </div>
+      <div class="panel" id="rampanel"></div>
+    </div>
+  </div>
+</section>
 
-<main>
-  <div class="col">
-    <div class="card">
-      <div class="charthead"><span class="t">Block 狀態圖（每格一個 block，依 channel 分組）</span></div>
+<!-- ===================== command interface ===================== -->
+<div class="bus">
+  <div class="flows" id="flows"></div>
+  <div class="ticker">
+    <div class="th">最近的 NAND 命令（新→舊）</div>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
+<!-- ===================== NAND module ===================== -->
+<section class="module nand">
+  <div class="mh"><span class="mt">NAND Flash（實體）</span>
+    <span class="md">實體視角：channel / die / block / page 狀態與磨損 —— 只認識 PPA，不知道 LBA 的意義</span></div>
+  <div class="mbody">
+    <div class="panel">
+      <div class="ph"><span class="t">Block 狀態圖（每格一個 block，依 channel 分組）</span></div>
       <div class="diegrid" id="diegrid"></div>
       <div class="legendrow" id="maplegend"></div>
     </div>
-    <div class="card" id="rampanel"></div>
-  </div>
-  <div class="col">
-    <div class="card">
-      <div class="charthead">
-        <span class="t">WAF 隨寫入量變化</span>
-        <span class="lg">
-          <span><span class="sw" style="background:var(--s1)"></span>累積 WAF</span>
-          <span><span class="sw" style="background:var(--s2)"></span>區間 WAF</span>
-        </span>
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph"><span class="t">Block 抹除次數分布（磨損均勻度）</span></div>
+        <div id="echart"></div>
       </div>
-      <div id="wafchart"></div>
-    </div>
-    <div class="card">
-      <div class="charthead"><span class="t">Block 抹除次數分布（磨損均勻度）</span></div>
-      <div id="echart"></div>
-    </div>
-    <div class="card">
-      <div class="charthead"><span class="t">Channel 負載</span></div>
-      <table class="ch" id="chtable"></table>
+      <div class="panel">
+        <div class="ph"><span class="t">Channel 負載</span></div>
+        <table class="ch" id="chtable"></table>
+      </div>
     </div>
   </div>
-</main>
+</section>
 
 <div id="tip"></div>
 
@@ -166,21 +229,19 @@ const fmt = n => n.toLocaleString("en-US");
 const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches
                      && document.documentElement.dataset.theme !== "light";
 
-// sequential blue ramp (reference palette, steps 100->700)
 const RAMP = ["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7",
               "#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
-function seqColor(ratio){           // 0..1 magnitude -> ramp step
+function seqColor(ratio){
   const r = Math.max(0, Math.min(1, ratio));
-  const ramp = isDark() ? [...RAMP].reverse() : RAMP;   // near-zero recedes toward surface
+  const ramp = isDark() ? [...RAMP].reverse() : RAMP;
   return ramp[Math.round(r * (ramp.length - 1))];
 }
 
 function showTip(ev, html){
   tip.innerHTML = html;
   tip.style.display = "block";
-  const x = Math.min(ev.clientX + 14, innerWidth - 250);
-  const y = Math.min(ev.clientY + 12, innerHeight - 80);
-  tip.style.left = x + "px"; tip.style.top = y + "px";
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - 260) + "px";
+  tip.style.top  = Math.min(ev.clientY + 12, innerHeight - 90) + "px";
 }
 function hideTip(){ tip.style.display = "none"; }
 
@@ -191,7 +252,7 @@ async function api(path, body){
   return r.json();
 }
 
-// ---------- render: stat tiles ----------
+/* ============== FTL module ============== */
 function renderTiles(s){
   const m = s.metrics;
   const util = s.config.user_pages ? (m.mapped_lbas / s.config.user_pages * 100) : 0;
@@ -200,60 +261,63 @@ function renderTiles(s){
     ["Host 寫入", fmt(m.host_writes), "pages"],
     ["GC 搬移", fmt(m.gc_writes), "pages"],
     ["GC 次數", fmt(m.gc_runs), ""],
-    ["抹除次數", fmt(m.erases), "blocks"],
-    ["Free blocks", fmt(m.free_blocks), "of " + fmt(s.config.total_blocks)],
     ["LBA 使用率", util.toFixed(1) + "%", fmt(m.mapped_lbas) + " mapped"],
   ];
   $("tiles").innerHTML = tiles.map(([k,v,d]) =>
     `<div class="tile"><div class="k">${k}</div><div class="v mono">${v}</div><div class="d">${d}</div></div>`).join("");
 }
 
-// ---------- render: block map ----------
-function renderMap(s){
-  const cfg = s.config, ppb = s.pages_per_block;
-  const byDie = new Map();
-  for (const b of s.blocks){
-    if (!byDie.has(b.die)) byDie.set(b.die, []);
-    byDie.get(b.die).push(b);
-  }
-  const cols = Math.ceil(Math.sqrt(cfg.blocks_per_die));
+function renderLbaHeat(s){
+  const h = s.lba_heat, nb = h.buckets;
+  const wmax = Math.max(1, ...h.writes);
   let html = "";
-  for (const [die, blocks] of byDie){
-    html += `<div class="die"><div class="dh">CH${blocks[0].ch} / Die${die}</div>
-             <div class="cells" style="grid-template-columns:repeat(${cols},15px)">`;
-    for (const b of blocks){
-      let style = "", cls = "cell " + b.st;
-      if (b.st !== "free"){
-        style = `background:${seqColor(b.valid / ppb)};`;
-        if (b.st === "open") style += "border-color:var(--s2);";
-      }
-      html += `<div class="${cls}" style="${style}" data-i="${b.die}:${b.blk}"></div>`;
+  for (let i = 0; i < nb; i++){
+    const mappedR = h.mapped[i] / h.size[i];
+    const heat = h.writes[i] / wmax;
+    let style = "", cls = "lbacell";
+    if (h.writes[i] > 0 || mappedR > 0){
+      cls += " m";
+      style = `background:${seqColor(heat)};opacity:${0.35 + 0.65*mappedR};`;
     }
-    html += `</div></div>`;
+    html += `<div class="${cls}" style="${style}" data-i="${i}"></div>`;
   }
-  $("diegrid").innerHTML = html;
-
-  const mid = seqColor(0.5), hi = seqColor(1);
-  $("maplegend").innerHTML =
-    `<span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>free</span>
-     <span><span class="sw" style="background:${mid};border:2px solid var(--s2)"></span>open（寫入中）</span>
-     <span><span class="sw" style="background:${seqColor(0.1)}"></span>→<span class="sw" style="background:${hi}"></span> valid page 比例 低→高</span>`;
-
-  const index = {};
-  for (const b of s.blocks) index[b.die + ":" + b.blk] = b;
-  $("diegrid").onmousemove = ev => {
-    const el = ev.target.closest(".cell");
+  $("lbaheat").innerHTML = html;
+  $("lbainfo").textContent = `user LBA 0 – ${fmt(s.config.user_pages - 1)}（每格 ≈ ${fmt(h.size[0])} LBA）`;
+  $("lbalegend").innerHTML =
+    `<span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>未寫過</span>
+     <span><span class="sw" style="background:${seqColor(0.15)}"></span>→<span class="sw" style="background:${seqColor(1)}"></span> 寫入熱度 低→高</span>
+     <span class="sub">（這是 FTL 眼中的世界：只有邏輯位址，沒有 block）</span>`;
+  const lbaPer = Math.ceil(s.config.user_pages / nb);
+  $("lbaheat").onmousemove = ev => {
+    const el = ev.target.closest(".lbacell");
     if (!el){ hideTip(); return; }
-    const b = index[el.dataset.i];
-    showTip(ev, `<b>CH${b.ch} Die${b.die} Block ${b.blk}</b><br>
-      <span class="tk">狀態</span> ${b.st}<br>
-      <span class="tk">valid</span> ${b.valid}/${ppb}（written ${b.written}）<br>
-      <span class="tk">抹除次數</span> ${b.ec}`);
+    const i = +el.dataset.i;
+    showTip(ev, `<b>LBA ${fmt(i*lbaPer)} – ${fmt(Math.min((i+1)*lbaPer, s.config.user_pages)-1)}</b><br>
+      <span class="tk">host 寫入</span> ${fmt(h.writes[i])} 次<br>
+      <span class="tk">已映射</span> ${h.mapped[i]}/${h.size[i]}`);
   };
-  $("diegrid").onmouseleave = hideTip;
+  $("lbaheat").onmouseleave = hideTip;
 }
 
-// ---------- render: WAF line chart ----------
+function renderAlloc(s, blockIndex){
+  const f = s.ftl, cfg = s.config, ppb = s.pages_per_block;
+  const dpc = cfg.dies_per_channel;
+  const cell = (die, blk) => {
+    if (blk === null || blk === undefined) return "—";
+    const b = blockIndex[die + ":" + blk];
+    return `blk ${blk}（pg ${b ? b.written : "?"}/${ppb}）`;
+  };
+  let rows = `<tr><th>Die</th><th>CH</th><th>host open</th><th>GC open</th><th>free blocks</th></tr>`;
+  for (let d = 0; d < f.free_per_die.length; d++){
+    const low = f.free_per_die[d] <= f.gc_low_water;
+    rows += `<tr><td>Die${d}</td><td class="mono">CH${Math.floor(d/dpc)}</td>
+      <td class="mono">${cell(d, f.host_open[d])}</td>
+      <td class="mono">${cell(d, f.gc_open[d])}</td>
+      <td class="mono" style="${low ? "color:var(--bad);font-weight:600" : ""}">${f.free_per_die[d]}${low ? " ⚠GC" : ""}</td></tr>`;
+  }
+  $("alloctable").innerHTML = rows;
+}
+
 function renderWaf(s){
   const H = s.history, box = $("wafchart");
   if (H.length < 2){ box.innerHTML = `<div class="sub">執行 workload 後顯示曲線</div>`; return; }
@@ -297,7 +361,90 @@ function renderWaf(s){
   svg.onmouseleave = () => { xh.setAttribute("visibility","hidden"); hideTip(); };
 }
 
-// ---------- render: erase-count histogram ----------
+function renderRam(s){
+  const r = s.ram, pct = Math.min(100, r.utilization * 100);
+  const ok = r.fits;
+  $("rampanel").innerHTML =
+    `<div class="ph"><span class="t">Controller RAM（mapping table 常駐）</span>
+       <span class="okbadge" style="color:var(--${ok ? "good" : "bad"})">${ok ? "✓ 放得下" : "✗ 超出預算"}</span></div>
+     <div class="sub mono">mapping ${fmt(r.mapping_bytes)} B / 預算 ${fmt(r.budget_bytes)} B（${(r.utilization*100).toFixed(1)}%）</div>
+     <div class="rambar"><div style="width:${pct}%;${ok?"":"background:var(--bad)"}"></div></div>
+     <div class="sub" style="margin-top:6px">page-level 全表 = user_pages × 4B。放不下時就是換 block-level / hybrid / DFTL 的實驗起點。</div>`;
+}
+
+/* ============== command interface band ============== */
+const OPSTYLE = {
+  "prog:host": ["var(--c-ph)", "program(host)"],
+  "prog:gc":   ["var(--c-pg)", "program(GC)"],
+  "read:gc":   ["var(--c-rd)", "read(GC)"],
+  "read:host": ["var(--c-rd)", "read(host)"],
+  "erase:gc":  ["var(--c-er)", "erase"],
+};
+function renderBus(s){
+  const last = s.history[s.history.length - 1];
+  const f = last || {d_host:0, d_gc:0, d_read:0, d_erase:0};
+  $("flows").innerHTML =
+    `<div class="fl"><span class="ar" style="color:var(--c-ph)">↓</span>
+       program（host）<b>${fmt(f.d_host)}</b><span class="sub">/上一步</span></div>
+     <div class="fl"><span class="ar" style="color:var(--c-pg)">↓</span>
+       program（GC 搬移）<b>${fmt(f.d_gc)}</b></div>
+     <div class="fl"><span class="ar" style="color:var(--c-rd)">↑</span>
+       read（GC 回讀）<b>${fmt(f.d_read)}</b></div>
+     <div class="fl"><span class="ar" style="color:var(--c-er)">↓</span>
+       erase <b>${fmt(f.d_erase)}</b></div>`;
+  const chips = [...s.oplog].reverse().map(([op, origin, die, blk, pg]) => {
+    const [color, name] = OPSTYLE[op + ":" + origin] || ["var(--muted)", op];
+    const loc = op === "erase" ? `D${die}·B${blk}` : `D${die}·B${blk}·P${pg}`;
+    return `<span class="chip"><span class="dot" style="background:${color}"></span>${name} ${loc}</span>`;
+  }).join("");
+  $("chips").innerHTML = chips || `<span class="sub">尚無命令</span>`;
+}
+
+/* ============== NAND module ============== */
+function renderMap(s){
+  const cfg = s.config, ppb = s.pages_per_block;
+  const byDie = new Map();
+  for (const b of s.blocks){
+    if (!byDie.has(b.die)) byDie.set(b.die, []);
+    byDie.get(b.die).push(b);
+  }
+  const cols = Math.ceil(Math.sqrt(cfg.blocks_per_die));
+  let html = "";
+  for (const [die, blocks] of byDie){
+    html += `<div class="die"><div class="dh">CH${blocks[0].ch} / Die${die}</div>
+             <div class="cells" style="grid-template-columns:repeat(${cols},15px)">`;
+    for (const b of blocks){
+      let style = "", cls = "cell " + b.st;
+      if (b.st !== "free"){
+        style = `background:${seqColor(b.valid / ppb)};`;
+        if (b.st === "open") style += "border-color:var(--s2);";
+      }
+      html += `<div class="${cls}" style="${style}" data-i="${b.die}:${b.blk}"></div>`;
+    }
+    html += `</div></div>`;
+  }
+  $("diegrid").innerHTML = html;
+  $("maplegend").innerHTML =
+    `<span><span class="sw" style="background:var(--page);border:1px dashed var(--baseline)"></span>free</span>
+     <span><span class="sw" style="background:${seqColor(0.5)};border:2px solid var(--s2)"></span>open（寫入中）</span>
+     <span><span class="sw" style="background:${seqColor(0.1)}"></span>→<span class="sw" style="background:${seqColor(1)}"></span> valid page 比例 低→高</span>
+     <span class="sub">（NAND 眼中的世界：只有實體位置與狀態）</span>`;
+
+  const index = {};
+  for (const b of s.blocks) index[b.die + ":" + b.blk] = b;
+  $("diegrid").onmousemove = ev => {
+    const el = ev.target.closest(".cell");
+    if (!el){ hideTip(); return; }
+    const b = index[el.dataset.i];
+    showTip(ev, `<b>CH${b.ch} Die${b.die} Block ${b.blk}</b><br>
+      <span class="tk">狀態</span> ${b.st}<br>
+      <span class="tk">valid</span> ${b.valid}/${ppb}（written ${b.written}）<br>
+      <span class="tk">抹除次數</span> ${b.ec}`);
+  };
+  $("diegrid").onmouseleave = hideTip;
+  return index;
+}
+
 function renderEc(s){
   const box = $("echart");
   const ecs = s.blocks.map(b => b.ec);
@@ -316,11 +463,9 @@ function renderEc(s){
   const lbls = [];
   for (let i = 0; i < nb; i++){
     const lo = Math.round(mn + i * bw), hi = Math.round(mn + (i+1) * bw) - (bw >= 1 ? 1 : 0);
-    const lbl = bw <= 1 ? String(lo) : `${lo}–${hi}`;
-    lbls.push(lbl);
+    lbls.push(bw <= 1 ? String(lo) : `${lo}–${hi}`);
     if (!buckets[i]) continue;
-    const h = Y(0) - Y(buckets[i]);
-    bars += `<rect x="${X(i)+1}" y="${Y(buckets[i])}" width="${colW-2}" height="${h}"
+    bars += `<rect x="${X(i)+1}" y="${Y(buckets[i])}" width="${colW-2}" height="${Y(0)-Y(buckets[i])}"
               fill="${fill}" rx="3" data-b="${i}"/>`;
   }
   const step = Math.ceil(nb / 8);
@@ -332,7 +477,6 @@ function renderEc(s){
      <line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--baseline)"/>
      <text x="${L-5}" y="${Y(cmax)+4}" text-anchor="end" class="mono">${cmax}</text>
      ${bars}${ax}
-     <text x="${(L+W-R)/2}" y="${Ht+0}" text-anchor="middle" visibility="hidden">.</text>
    </svg>
    <div class="sub mono">min ${mn} / max ${mx}　blocks=${ecs.length}</div>`;
   box.querySelector("svg").onmousemove = ev => {
@@ -345,17 +489,7 @@ function renderEc(s){
   box.querySelector("svg").onmouseleave = hideTip;
 }
 
-// ---------- render: RAM & channels ----------
-function renderRam(s){
-  const r = s.ram, pct = Math.min(100, r.utilization * 100);
-  const ok = r.fits;
-  $("rampanel").innerHTML =
-    `<div class="charthead"><span class="t">Controller RAM（mapping table 常駐）</span>
-       <span class="okbadge" style="color:var(--${ok ? "good" : "bad"})">${ok ? "✓ 放得下" : "✗ 超出預算"}</span></div>
-     <div class="sub mono">mapping ${fmt(r.mapping_bytes)} B / 預算 ${fmt(r.budget_bytes)} B（${(r.utilization*100).toFixed(1)}%）</div>
-     <div class="rambar"><div style="width:${pct}%;${ok?"":"background:var(--bad)"}"></div></div>
-     <div class="sub" style="margin-top:6px">page-level 全表 = user_pages × 4B。放不下時就是換 block-level / hybrid / DFTL 的實驗起點。</div>`;
-
+function renderCh(s){
   const ch = s.channels;
   let rows = `<tr><th>CH</th><th>programs</th><th>reads</th><th>erases</th></tr>`;
   for (let i = 0; i < ch.programs.length; i++)
@@ -369,13 +503,29 @@ function renderAll(s){
   $("cfgline").textContent =
     `${c.channels} ch × ${c.dies_per_channel} die × ${c.blocks_per_die} blk × ${c.pages_per_block} pg × ${(c.page_size/1024)}KB`
     + ` = ${c.nominal_mb}MB（OP ${(c.op_ratio*100).toFixed(1)}% → user ${fmt(c.user_pages)} pages）｜metadata-only`;
-  renderTiles(s); renderMap(s); renderWaf(s); renderEc(s); renderRam(s);
+  renderTiles(s);
+  renderLbaHeat(s);
+  renderWaf(s);
+  renderRam(s);
+  renderBus(s);
+  const blockIndex = renderMap(s);
+  renderAlloc(s, blockIndex);
+  renderEc(s);
+  renderCh(s);
 }
 
 async function refresh(){ renderAll(await api("/api/state")); }
 
-// ---------- controls ----------
+/* ============== controls ============== */
 let busy = false, timer = null;
+function say(text, ok){
+  const el = $("msg");
+  el.textContent = text;
+  el.style.color = ok ? "var(--good)" : "var(--bad)";
+  el.style.fontWeight = "600";
+  clearTimeout(say._t);
+  say._t = setTimeout(() => { el.textContent = ""; }, 6000);
+}
 async function stepOnce(){
   if (busy) return;
   busy = true;
@@ -397,14 +547,6 @@ $("auto").onclick = () => {
   $("auto").textContent = "⏸ 停止";
   $("auto").classList.remove("primary");
 };
-function say(text, ok){
-  const el = $("msg");
-  el.textContent = text;
-  el.style.color = ok ? "var(--good)" : "var(--bad)";
-  el.style.fontWeight = "600";
-  clearTimeout(say._t);
-  say._t = setTimeout(() => { el.textContent = ""; }, 6000);
-}
 $("verify").onclick = async () => {
   const v = await api("/api/verify", {});
   say(v.ok ? `✓ 驗證通過：${fmt(v.checked)} 個 LBA 全部一致`

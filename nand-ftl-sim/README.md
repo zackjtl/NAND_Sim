@@ -15,9 +15,14 @@ nandsim/controller.py  Controller：channel/die 路由、PPA 編解碼、
 nandsim/ftl.py         Page-level FTL：round-robin channel striping、
                        greedy GC、host 端影子表完整性驗證
 nandsim/workload.py    Workload：循序 / 均勻隨機 / 冷熱 80-20
-server.py              HTTP API + 前端（stdlib http.server，port 8731）
-web/index.html         觀察前端：block 狀態圖、WAF 曲線、磨損分布、
-                       channel 負載、RAM 使用
+server.py              HTTP API + 前端（stdlib http.server，port 8732）
+web/index.html         觀察前端，分成兩個模組區塊呈現互動：
+                       「FTL（控制器韌體）」邏輯視角 —— LBA 熱度圖、
+                       WAF 曲線、open block / free pool 配置表、RAM 使用；
+                       「NAND Flash（實體）」實體視角 —— block 狀態圖、
+                       磨損分布、channel 負載；兩區之間是 NAND 命令
+                       介面帶，顯示 program(host/GC)/read/erase 流量
+                       與最近命令
 selftest.py            自我測試：NAND 規則 + 三種 workload 各 20 萬次寫入
                        後做全量完整性驗證
 ```
@@ -26,7 +31,7 @@ selftest.py            自我測試：NAND 規則 + 三種 workload 各 20 萬�
 
 ```powershell
 python selftest.py     # 核心自測
-python server.py       # 開 http://localhost:8731
+python server.py       # 開 http://localhost:8732
 ```
 
 ## 預設幾何（可在前端「重設…」調整）

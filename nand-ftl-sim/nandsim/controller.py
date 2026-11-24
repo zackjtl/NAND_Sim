@@ -8,6 +8,8 @@ Tracks per-channel operation counters (parallelism distribution) and the
 RAM budget the FTL has to live within.
 """
 
+from collections import deque
+
 from .nand import Die, NandConfig
 
 
@@ -19,6 +21,8 @@ class Controller:
         self.ch_reads = [0] * cfg.channels
         self.ch_erases = [0] * cfg.channels
         self._pages_per_die = cfg.blocks_per_die * cfg.pages_per_block
+        # trace of the most recent commands crossing the FTL->NAND interface
+        self.oplog = deque(maxlen=36)
 
     # ---- PPA helpers -------------------------------------------------
     def encode(self, die, block, page):
@@ -33,23 +37,27 @@ class Controller:
         return die // self.cfg.dies_per_channel
 
     # ---- NAND commands ----------------------------------------------
-    def program(self, ppa, lba, tag):
+    def program(self, ppa, lba, tag, origin="host"):
         die, block, page = self.decode(ppa)
         self.dies[die].program(block, page, lba, tag)
         self.ch_programs[self.channel_of(die)] += 1
+        self.oplog.append(("prog", origin, die, block, page))
 
-    def read(self, ppa):
+    def read(self, ppa, origin="host"):
         die, block, page = self.decode(ppa)
         self.ch_reads[self.channel_of(die)] += 1
+        self.oplog.append(("read", origin, die, block, page))
         return self.dies[die].read(block, page)
 
     def invalidate(self, ppa):
+        # mapping-metadata update inside the FTL, not a NAND bus command
         die, block, page = self.decode(ppa)
         self.dies[die].invalidate(block, page)
 
-    def erase(self, die, block):
+    def erase(self, die, block, origin="gc"):
         self.dies[die].erase(block)
         self.ch_erases[self.channel_of(die)] += 1
+        self.oplog.append(("erase", origin, die, block, -1))
 
     def next_page(self, die, block):
         return self.dies[die].next_page[block]
