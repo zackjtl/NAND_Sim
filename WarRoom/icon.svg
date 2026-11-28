@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1528" />
+      <stop offset="100%" stop-color="#14233d" />
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="url(#bg)" stroke="#22e6f0" stroke-width="2.5" />
+  <polygon points="32,8 52,20 52,44 32,56 12,44 12,20" fill="none" stroke="#22e6f0" stroke-width="1.2" opacity="0.32" />
+  <text x="32" y="40" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" font-weight="700" fill="#22e6f0">NS</text>
+</svg>
